@@ -1,8 +1,9 @@
-package etcd
+package resolver
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func (p *Builder) Build(target resolver.Target, cc resolver.ClientConn, opts res
 		cli:    cli,
 		ctx:    ctx,
 		cancel: cancel,
-		key:    filepath.Join(Prefix, target.Authority, "/"),
+		key:    filepath.Join(Prefix, target.Authority) + "/",
 	}
 
 	go r.watch()
@@ -78,7 +79,9 @@ type Resolver struct {
 }
 
 // ResolveNow implement resolver.Resolver
-func (p *Resolver) ResolveNow(o resolver.ResolveNowOption) {}
+func (p *Resolver) ResolveNow(o resolver.ResolveNowOption) {
+	log.Println("ResolveNow")
+}
 
 // Close implement resolver.Resolver
 func (p *Resolver) Close() {}
@@ -90,6 +93,7 @@ func (p *Resolver) watchKey() string {
 
 // watch 监控etcd数据变化
 func (p *Resolver) watch() {
+	p.syncAddress()
 	rch := p.cli.Watch(p.ctx, p.watchKey())
 	for {
 		select {
@@ -112,17 +116,17 @@ func (p *Resolver) watch() {
 func (p *Resolver) syncAddress() {
 	ctx, cancel := context.WithTimeout(p.ctx, DefaultTimeout)
 
-	resp, err := p.cli.Get(ctx, p.watchKey())
+	resp, err := p.cli.Get(ctx, p.watchKey(), clientv3.WithPrefix())
 	cancel()
 	if err != nil {
-		fmt.Println("etcd client get err", err)
+		// fmt.Println("etcd client get err", err)
 		return
 	}
 
 	addrs := make([]resolver.Address, len(resp.Kvs))
 	for i, ev := range resp.Kvs {
-		fmt.Printf("%s : %s\n", ev.Key, ev.Value)
-		addrs[i] = resolver.Address{Addr: string(ev.Key)}
+
+		addrs[i] = resolver.Address{Addr: strings.TrimPrefix(string(ev.Key), p.watchKey())}
 
 	}
 	p.cc.NewAddress(addrs)
@@ -139,8 +143,8 @@ type Register struct {
 	addr string
 }
 
-// New New
-func (p *Register) New(name, addr string, endpoints []string) (*Register, error) {
+// NewRegister NewRegister
+func NewRegister(name, addr string, endpoints []string) (*Register, error) {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: DefaultTimeout,
@@ -151,7 +155,7 @@ func (p *Register) New(name, addr string, endpoints []string) (*Register, error)
 
 	return &Register{
 		cli:  cli,
-		key:  filepath.Join(Prefix, name, "/"),
+		key:  filepath.Join(Prefix, name),
 		addr: addr,
 	}, nil
 }
@@ -206,7 +210,7 @@ func (p *Register) AutoRegisteWithExpire(ctx context.Context, sec int64) error {
 			select {
 			case <-ctx.Done():
 			case ka := <-ch:
-				fmt.Println("ttl:", ka.TTL)
+				fmt.Println("skip key ttl:", ka.TTL)
 			}
 		}
 	}()
