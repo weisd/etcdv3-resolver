@@ -44,7 +44,7 @@ use target : etcdv3://servicename/<etcd1:2379,etcd2:2379,etcd3:2379>
 ```golang
 conn, err := grpc.Dial(
     fmt.Sprintf("etcdv3://test/%s", etcdAddrs),
-    grpc.WithBalancerName("round_robin"),****
+    grpc.WithBalancerName("round_robin"),
     grpc.WithInsecure(),
 )
 if err != nil {
